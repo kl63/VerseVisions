@@ -32,3 +32,6 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Add the artifacts directory to .gitignore
+artifacts/

@@ -16,6 +16,8 @@ load_dotenv()
 # API keys
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 SUNO_API_KEY = os.getenv("SUNO_API_KEY")
+VIDEO_API_KEY = os.getenv("VIDEO_API_KEY")
+DALLE_API_KEY = os.getenv("DALLE_API_KEY")
 
 # API endpoints
 SUNO_API_BASE_URL = "https://apibox.erweima.ai/api/v1"
@@ -111,7 +113,25 @@ class MusicGenerator:
         if not self.api_key or self.api_key.strip() == "":
             print("ERROR: SUNO_API_KEY environment variable is not set or is empty.")
             print("Please add your Suno API key to the .env file.")
-    
+
+        # Video generation API setup
+        self.video_api_key = VIDEO_API_KEY
+        if not self.video_api_key or self.video_api_key.strip() == "":
+            print("WARNING: VIDEO_API_KEY environment variable is not set or is empty.")
+            print("Video generation will be skipped. Add your Video API key to the .env file to enable video generation.")
+            self.video_enabled = False
+        else:
+            self.video_enabled = True
+
+        # DALL-E API setup
+        self.dalle_api_key = DALLE_API_KEY
+        if not self.dalle_api_key or self.dalle_api_key.strip() == "":
+            print("WARNING: DALLE_API_KEY environment variable is not set or is empty.")
+            print("Image generation will be skipped. Add your DALL-E API key to the .env file to enable image generation.")
+            self.dalle_enabled = False
+        else:
+            self.dalle_enabled = True
+
     def generate_music(self, title, lyrics, style, custom_mode=True, instrumental=False, model="V3_5"):
         """
         Generate music with lyrics using Suno API.
@@ -127,6 +147,11 @@ class MusicGenerator:
         Returns:
             dict: Response from Suno API containing task ID and other details
         """
+        # Truncate title if it exceeds 80 characters
+        if len(title) > 80:
+            print(f"Title is too long, truncating to 80 characters.")
+            title = title[:80]
+        
         # Prepare request payload
         payload = {
             "prompt": lyrics,
@@ -156,6 +181,14 @@ class MusicGenerator:
                 resp_json = response.json()
                 if self.debug:
                     print(f"API Response: {json.dumps(resp_json, indent=2)}")
+
+                # Extract task ID
+                task_id = resp_json.get('data', {}).get('taskId')
+                if not task_id:
+                    print("Error: Task ID not found in response.")
+                    print(f"Full response: {json.dumps(resp_json, indent=2)}")
+                    return None
+
                 return resp_json
             else:
                 print(f"Error generating music: Status code {response.status_code}")
@@ -181,7 +214,164 @@ class MusicGenerator:
         except requests.exceptions.RequestException as e:
             print(f"Network error when contacting Suno API: {e}")
             return None
-    
+
+    def generate_video(self, title, lyrics, audio_path):
+        """
+        Generate a video using DeepAI video generation API.
+        
+        Args:
+            title: Song title
+            lyrics: Lyrics content
+            audio_path: Path to the generated audio file
+            
+        Returns:
+            str: URL of the generated video
+        """
+        # Verify that video generation is enabled and the audio file exists
+        if not self.video_enabled:
+            print("Skipping video generation as VIDEO_API_KEY is not set.")
+            return None
+            
+        if not os.path.exists(audio_path) or os.path.getsize(audio_path) == 0:
+            print(f"Audio file not found or empty: {audio_path}")
+            print("Skipping video generation.")
+            return None
+            
+        print(f"Generating video for '{title}' using the audio file: {audio_path}")
+        
+        # DeepAI API endpoint
+        video_api_url = "https://api.deepai.org/api/video-generator"
+        
+        # Create payload for video generation API
+        payload = {
+            "title": title,
+            "text": lyrics
+        }
+        
+        headers = {
+            "api-key": self.video_api_key
+        }
+        
+        try:
+            print("Sending request to DeepAI video generation API...")
+            if self.debug:
+                print(f"Video API URL: {video_api_url}")
+                print(f"Payload: {json.dumps(payload, indent=2)}")
+            
+            # Attempt to generate video
+            with open(audio_path, 'rb') as audio_file:
+                files = {
+                    'audio': audio_file
+                }
+                response = requests.post(
+                    video_api_url,
+                    headers=headers,
+                    data=payload,
+                    files=files,
+                    timeout=60  # Longer timeout for video generation
+                )
+            
+            print(f"Response status code: {response.status_code}")
+            
+            if response.status_code == 200:
+                try:
+                    video_data = response.json()
+                    print(f"Video generation response received.")
+                    if self.debug:
+                        print(f"Response data: {json.dumps(video_data, indent=2)}")
+                    
+                    # Extract video URL from response
+                    video_url = video_data.get("output_url")
+                    if video_url:
+                        print(f"Video URL: {video_url}")
+                        return video_url
+                    else:
+                        print("No video URL found in the response.")
+                        if self.debug:
+                            print(f"Full response: {json.dumps(video_data, indent=2)}")
+                        return None
+                except ValueError:
+                    print("Invalid JSON response from video API.")
+                    print(f"Raw response: {response.text[:200]}...")
+                    return None
+            else:
+                print(f"Error generating video: Status code {response.status_code}")
+                print(f"Response: {response.text[:200]}...")
+                return None
+                
+        except requests.exceptions.RequestException as e:
+            print(f"Network error during video generation: {e}")
+            return None
+
+    def generate_images_with_dalle(self, prompt, num_images=5):
+        """
+        Generate a series of images using OpenAI's DALL-E.
+        
+        Args:
+            prompt: Text prompt to generate images
+            num_images: Number of images to generate
+            
+        Returns:
+            List of file paths to the generated images
+        """
+        import time
+        import os
+
+        # Create a directory for the prompt
+        prompt_dir = os.path.join("artifacts", prompt.replace(" ", "_"))
+        os.makedirs(prompt_dir, exist_ok=True)
+
+        image_paths = []
+        headers = {
+            "Authorization": f"Bearer {self.dalle_api_key}"
+        }
+        
+        for i in range(num_images):
+            try:
+                response = requests.post(
+                    "https://api.openai.com/v1/images/generations",
+                    headers=headers,
+                    json={"prompt": prompt, "n": 1, "size": "1024x1024"}
+                )
+                
+                if response.status_code == 200:
+                    image_data = response.json()
+                    image_url = image_data['data'][0]['url']
+                    image_path = self.download_image(image_url, os.path.join(prompt_dir, f"image_{i+1}.png"))
+                    image_paths.append(image_path)
+                else:
+                    print(f"Error generating image {i+1}: {response.status_code}")
+                
+                # Add delay to prevent hitting rate limits
+                time.sleep(2)
+            except Exception as e:
+                print(f"Exception occurred while generating image {i+1}: {e}")
+        
+        return image_paths
+
+    def download_image(self, url, output_path):
+        """
+        Download an image from a URL to a local file.
+        
+        Args:
+            url: URL of the image to download
+            output_path: Path where to save the downloaded image
+        """
+        try:
+            response = requests.get(url, stream=True)
+            if response.status_code == 200:
+                with open(output_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                print(f"Image downloaded successfully: {output_path}")
+                return output_path
+            else:
+                print(f"Failed to download image: {response.status_code}")
+                return None
+        except requests.exceptions.RequestException as e:
+            print(f"Network error while downloading image: {e}")
+            return None
+
     def find_audio_url(self, obj):
         """
         Recursively search for audio URL in a nested JSON object.
@@ -325,13 +515,15 @@ class MusicGenerator:
         
         return False
     
-    def monitor_and_download(self, task_id, output_path, max_checks=30, check_interval=10):
+    def monitor_and_download(self, task_id, output_path, title="", lyrics="", max_checks=30, check_interval=10):
         """
         Monitor a task until completion and download the result.
         
         Args:
             task_id: Task ID to monitor
             output_path: Where to save the downloaded file
+            title: Song title (for video generation)
+            lyrics: Song lyrics (for video generation)
             max_checks: Maximum number of status checks
             check_interval: Seconds between checks
             
@@ -339,7 +531,7 @@ class MusicGenerator:
             bool: True if download was successful, False otherwise
         """
         print(f"Monitoring task ID: {task_id}")
-        print(f"Will save to: {output_path}")
+        print(f"Will save audio to: {output_path}")
         
         # Save task ID to a file for later use if needed
         with open('last_task_id.txt', 'w') as f:
@@ -363,12 +555,6 @@ class MusicGenerator:
                 error_msg = task_details.get('msg', 'Unknown error')
                 print(f"API error: {api_code} - {error_msg}")
                 
-                if api_code == 429:
-                    print("Insufficient credits. Please add more credits to your account.")
-                elif api_code == 455:
-                    print("System is under maintenance. Please try again later.")
-                
-                # For most errors, we should stop polling
                 if api_code not in [200, 404]:  # 404 might be temporary
                     return False
             
@@ -420,8 +606,19 @@ class MusicGenerator:
                 
                 if audio_url:
                     print(f"Found audio URL: {audio_url}")
-                    success = self.download_music(audio_url, output_path)
-                    return success
+                    audio_success = self.download_music(audio_url, output_path)
+                    
+                    if audio_success and self.dalle_enabled and title:
+                        # Now that audio is downloaded, generate images
+                        print("\n=== Starting Image Generation ===")
+                        image_paths = self.generate_images_with_dalle(title)
+                        if image_paths:
+                            print("Images generated successfully.")
+                        return audio_success
+                    else:
+                        print("Image generation failed or not available, but audio was successful.")
+                    
+                    return audio_success
                 else:
                     print("No audio URL found in the response.")
             
@@ -439,6 +636,42 @@ class MusicGenerator:
         print(f"You can check again later using: python main.py --check-task {task_id} --output {output_path}")
         return False
 
+    def create_video_from_images_and_lyrics(self, image_paths, lyrics, output_video_path, audio_path):
+        """
+        Create a video from a series of images with lyrics overlaid as text and add audio.
+        
+        Args:
+            image_paths: List of file paths to the images
+            lyrics: Lyrics to overlay on the video
+            output_video_path: Path to save the generated video
+            audio_path: Path to the audio file to include in the video
+        """
+        from moviepy.editor import ImageClip, concatenate_videoclips, TextClip, CompositeVideoClip, AudioFileClip
+        
+        # Create video clips from images
+        clips = []
+        for image_path in image_paths:
+            clip = ImageClip(image_path).set_duration(3)  # Each image lasts 3 seconds
+            clips.append(clip)
+        
+        # Concatenate image clips
+        video = concatenate_videoclips(clips, method="compose")
+        
+        # Create a text clip for lyrics
+        text_clip = TextClip(lyrics, fontsize=24, color='white', bg_color='black', size=video.size)
+        text_clip = text_clip.set_duration(video.duration).set_position(('center', 'bottom'))
+        
+        # Overlay text on video
+        final_video = CompositeVideoClip([video, text_clip])
+
+        # Add audio to the video
+        audio = AudioFileClip(audio_path)
+        final_video = final_video.set_audio(audio)
+        
+        # Write the video file
+        final_video.write_videofile(output_video_path, fps=24)
+        print(f"Video created successfully: {output_video_path}")
+
 
 def main():
     """Main function to orchestrate lyrics and music generation."""
@@ -455,135 +688,70 @@ def main():
     parser.add_argument('--checks', type=int, default=30, help='Maximum number of status checks')
     parser.add_argument('--interval', type=int, default=10, help='Seconds between status checks')
     parser.add_argument('--check-task', type=str, nargs='?', const=True, help='Check status of an existing task ID and download the result')
+    parser.add_argument('--skip-images', action='store_true', help='Skip image generation even if DALLE_API_KEY is set')
     
     args = parser.parse_args()
-    
-    # Check for API keys first
-    if not os.getenv("SUNO_API_KEY"):
-        print("ERROR: SUNO_API_KEY environment variable is not set.")
-        print("Please add your Suno API key to the .env file.")
-        return
-    
-    if not args.instrumental and not os.getenv("ANTHROPIC_API_KEY"):
-        print("ERROR: ANTHROPIC_API_KEY environment variable is not set.")
-        print("Please add your Anthropic API key to the .env file or use --instrumental flag.")
-        return
     
     # Create music generator instance
     music_gen = MusicGenerator(debug=args.debug)
     
+    # Disable image generation if requested
+    if args.skip_images:
+        music_gen.dalle_enabled = False
+        print("Image generation disabled by command line argument.")
+    
     # If checking an existing task
     if args.check_task:
         task_id = args.check_task
-        
-        # If no task ID provided but --check-task flag is used, try to read from file
-        if task_id == True:
-            try:
-                with open('last_task_id.txt', 'r') as f:
-                    task_id = f.read().strip()
-                print(f"Using task ID from last_task_id.txt: {task_id}")
-            except FileNotFoundError:
-                print("No task ID provided and no last_task_id.txt file found.")
-                return
+        if not os.path.exists(args.output):
+            print(f"Output file not found: {args.output}")
+            return
         
         print(f"Checking existing task: {task_id}")
-        music_gen.monitor_and_download(task_id, args.output, args.checks, args.interval)
+        music_gen.monitor_and_download(task_id, args.output)
         return
     
     # Ensure theme is provided for new music generation
     if not args.theme:
-        print("Please provide a theme with --theme")
+        print("ERROR: Theme is required for music generation.")
         return
     
-    # Generate lyrics using Anthropic (skip if instrumental is requested)
-    lyrics_content = ""
-    lyrics_title = ""
+    # Generate lyrics
+    lyrics_gen = LyricsGenerator()
+    lyrics_response = lyrics_gen.generate_lyrics(args.theme, args.style, args.verses, args.chorus)
+    lyrics_title = lyrics_response['title']
+    lyrics_content = lyrics_response['content']
     
-    if not args.instrumental:
-        print(f"Generating lyrics about '{args.theme}' in {args.style} style...")
-        lyrics_gen = LyricsGenerator()
-        lyrics_result = lyrics_gen.generate_lyrics(
-            args.theme, 
-            style=args.style,
-            num_verses=args.verses,
-            has_chorus=args.chorus
-        )
-        
-        lyrics_title = lyrics_result['title']
-        lyrics_content = lyrics_result['content']
-        
-        print(f"\nGenerated title: {lyrics_title}")
-        print("Generated lyrics:")
-        print("-" * 40)
-        print(lyrics_content)
-        print("-" * 40)
-    else:
-        # If instrumental, just use the theme as prompt
-        lyrics_content = args.theme
-        lyrics_title = args.theme.capitalize()
-        print(f"Creating instrumental music with theme: {args.theme}")
+    # Create a directory for the prompt
+    prompt_dir = os.path.join("artifacts", args.theme.replace(" ", "_"))
+    os.makedirs(prompt_dir, exist_ok=True)
     
-    # Generate music using Suno API
-    print("\nGenerating music with Suno API...")
-    generation_response = music_gen.generate_music(
-        lyrics_title,
-        lyrics_content,
-        args.style,
-        custom_mode=args.custom,
-        instrumental=args.instrumental,
-        model=args.model
-    )
-    
-    if not generation_response:
-        print("Failed to start music generation. Please check the error messages above.")
-        return
-    
-    if args.debug:
-        print("Full API response:")
-        print(json.dumps(generation_response, indent=2))
-    
-    # Check for the task ID in the response
-    task_id = None
-    try:
-        task_id = generation_response.get('data', {}).get('taskId')
-        if not task_id:
-            # Try alternative paths for task ID
-            task_id = generation_response.get('taskId')
-            
-            if not task_id:
-                # Search for taskId recursively
-                def find_task_id(obj):
-                    if isinstance(obj, dict):
-                        if 'taskId' in obj:
-                            return obj['taskId']
-                        for k, v in obj.items():
-                            result = find_task_id(v)
-                            if result:
-                                return result
-                    elif isinstance(obj, list):
-                        for item in obj:
-                            result = find_task_id(item)
-                            if result:
-                                return result
-                    return None
-                
-                task_id = find_task_id(generation_response)
-    except (KeyError, TypeError, AttributeError) as e:
-        print(f"Error extracting task ID: {e}")
-        print("API Response structure:")
-        print(json.dumps(generation_response, indent=2))
-        return
-    
+    # Generate music
+    music_gen_response = music_gen.generate_music(lyrics_title, lyrics_content, args.style, args.custom, args.instrumental, args.model)
+    task_id = music_gen_response.get('data', {}).get('taskId')
     if not task_id:
-        print("No task ID returned from Suno API.")
-        print("API Response structure:")
-        print(json.dumps(generation_response, indent=2))
+        print("Error: Task ID not found in response.")
+        print(f"Full response: {json.dumps(music_gen_response, indent=2)}")
         return
-    
     print(f"Music generation started with task ID: {task_id}")
     
     # Monitor the task until completion and download
-    music_gen.monitor_and_download(task_id, args.output, args.checks, args.interval)
+    audio_success = music_gen.monitor_and_download(
+        task_id, 
+        os.path.join(prompt_dir, args.output), 
+        title=lyrics_title,
+        lyrics=lyrics_content,
+        max_checks=args.checks, 
+        check_interval=args.interval
+    )
+    
+    # Generate images if audio was successful
+    if audio_success and not args.skip_images:
+        print("\n=== Starting Image Generation ===")
+        image_paths = music_gen.generate_images_with_dalle(lyrics_title)
+        if image_paths:
+            print("Images generated successfully.")
+        return  # End the application after image generation
 
 
 if __name__ == "__main__":

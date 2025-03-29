@@ -1,130 +1,65 @@
-# Lyrics and Music Generator
+# AI Time Capsule Project
 
-This Python script uses Anthropic's Claude model to generate song lyrics and then uses the Suno API to generate music from those lyrics.
+This project is an AI-driven application that generates music and accompanying images based on user-defined themes. The application utilizes the OpenAI DALL-E API for image generation and the Suno API for music creation.
 
 ## Features
+- **Music Generation**: Create music tracks based on themes and styles using the Suno API.
+- **Image Generation**: Generate images that visually represent the theme using OpenAI's DALL-E.
+- **Artifact Organization**: Each generation creates a dedicated folder containing both the audio and images.
 
-- Generate creative song lyrics based on a theme or idea
-- Customize lyrics with different music styles, number of verses, and chorus options
-- Generate instrumental or vocal tracks based on your preferences
-- Choose between Suno V3.5 or V4 models
-- Download the generated music as an audio file
-- Robust error handling and status checking
-- Ability to resume incomplete downloads or check on previous tasks
+## Usage
+To run the application, use the following command:
+
+```bash
+python main.py --theme "your_theme" --style "your_style" --verses 2 --chorus --model "V3_5" --output "your_output.mp3" --debug --checks 40 --interval 15
+```
+
+### Command-Line Arguments
+- `--theme`: The theme or idea for the song (required).
+- `--style`: The music style (e.g., rock, pop, rap).
+- `--verses`: Number of verses in the song.
+- `--chorus`: Include a chorus in the song.
+- `--model`: Model version to use for music generation.
+- `--output`: Output file path for the generated audio.
+- `--debug`: Enable debug output.
+- `--checks`: Maximum number of status checks.
+- `--interval`: Seconds between status checks.
+- `--skip-images`: Skip image generation.
+
+### Feature Descriptions
+- **Theme**: Defines the central concept or idea around which the song and images are created.
+- **Style**: Specifies the musical style, influencing the mood and instrumentation of the generated music.
+- **Verses**: Determines how many verses the song will have, affecting its length and structure.
+- **Chorus**: Adds a repetitive section to the song, enhancing its catchiness and structure.
+- **Model**: Selects the version of the Suno API model to use, which can affect the quality and characteristics of the music.
+- **Output**: Specifies where the generated audio file will be saved.
+- **Debug**: Provides detailed output for troubleshooting and understanding the generation process.
+- **Checks**: Limits the number of times the application will check the status of music generation, preventing infinite loops.
+- **Interval**: Sets the time between status checks, balancing responsiveness and API load.
+- **Skip Images**: Allows users to bypass image generation if only audio is desired.
+
+## Example Prompts
+- **Theme**: "Mystical Forest"
+  - **Style**: "Cinematic"
+  - **Command**: `python main.py --theme "Mystical Forest" --style "Cinematic" --verses 2 --chorus --model "V3_5" --output "mystical_forest.mp3"`
+
+- **Theme**: "Galactic Odyssey"
+  - **Style**: "Electronic"
+  - **Command**: `python main.py --theme "Galactic Odyssey" --style "Electronic" --verses 2 --chorus --model "V3_5" --output "galactic_odyssey.mp3"`
 
 ## Requirements
+- Python 3.x
+- OpenAI API Key (for DALL-E)
+- Suno API Key
 
-- Python 3.7+
-- Anthropic API key
-- Suno API key
+Ensure that the `.env` file contains valid API keys for both OpenAI and Suno.
 
-## Installation
-
-1. Make sure your `.env` file contains the required API keys:
-   ```
-   SUNO_API_KEY=your_suno_api_key
-   ANTHROPIC_API_KEY=your_anthropic_api_key
-   ```
-
-2. Install the required packages:
+## Setup
+1. Install the required packages:
    ```bash
    pip install -r requirements.txt
    ```
+2. Run the application with your desired theme and style.
 
-## Usage
-
-### Generate a New Song
-
-Run the script with the following command:
-
-```bash
-python main.py --theme "love and heartbreak" --style "indie rock" --verses 2 --chorus --output "my_song.mp3"
-```
-
-### Check on a Previous Task
-
-If your generation process was interrupted, you can resume it:
-
-```bash
-python main.py --check-task
-```
-
-This will automatically find the last task ID from the saved file and continue monitoring it.
-
-You can also specify a specific task ID:
-
-```bash
-python main.py --check-task "your-task-id" --output "my_song.mp3"
-```
-
-### Command-line Arguments
-
-- `--theme`: The main theme or idea for your song
-- `--style` (default: "pop"): The music style (e.g., rock, pop, rap, country)
-- `--verses` (default: 2): Number of verses to generate
-- `--chorus`: Include this flag to add a chorus to the lyrics
-- `--custom` (default: true): Use Suno API's custom mode for more control over generation
-- `--instrumental`: Generate instrumental music without lyrics
-- `--model` (default: "V3_5"): Suno API model to use (V3_5 or V4)
-- `--output` (default: "output.mp3"): Path where to save the generated music
-- `--debug`: Show detailed API response information
-- `--check-task`: Check status of an existing task ID and download the result
-- `--interval` (default: 10): Seconds between status checks
-- `--checks` (default: 30): Maximum number of status checks
-
-## Utility Scripts
-
-### Check Status Script
-
-The repository includes a standalone utility to check on existing task status:
-
-```bash
-python check_status.py --task-id "your-task-id" --output "my_song.mp3" --debug
-```
-
-### Download Song Script
-
-For a more robust downloading experience:
-
-```bash
-python download_song.py --task-id "your-task-id" --output "my_song.mp3" --max-checks 60
-```
-
-## API Diagnostics
-
-Test API connectivity with:
-
-```bash
-python test_api.py
-```
-
-## Example Commands
-
-### Generate a pop song about love
-```bash
-python main.py --theme "finding love in unexpected places" --style "pop" --chorus
-```
-
-### Create an instrumental jazz track
-```bash
-python main.py --theme "rainy day in the city" --style "jazz" --instrumental --model "V4"
-```
-
-### Generate a rock song with specific output location
-```bash
-python main.py --theme "overcoming challenges" --style "rock" --verses 3 --chorus --output "rock_anthem.mp3"
-```
-
-## How It Works
-
-1. The script uses Anthropic's Claude model to generate song lyrics based on your theme and style preferences
-2. It sends these lyrics to the Suno API for music generation using their V3.5 or V4 models
-3. The script polls the Suno API to check when the music generation is complete
-4. Once complete, it downloads the generated music to your specified output file
-
-## Notes
-
-- Music generation can take several minutes to complete
-- The Suno API retains generated files for 15 days
-- Custom mode in Suno API allows for more specific control over the music generation
-- Different models (V3.5 vs V4) may produce different musical qualities
+## Note
+The `artifacts` directory is included in `.gitignore` to prevent generated content from being tracked in version control.
